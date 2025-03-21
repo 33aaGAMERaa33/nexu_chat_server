@@ -1,33 +1,34 @@
-import { UsersEntity } from 'src/users/users.entity';
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { UsersEntity } from "src/users/users.entity";
+import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 
-export enum ContactRequestStatus {
-  accepted = "accepted",
-  rejected = "rejected",
-  pending = "pending",
+export enum ContactRequestsStatus{
+    accepted = "accepted",
+    rejected = "rejected",
+    pending = "pending"
 }
 
-@Entity('contact_requests')
-export class ContactRequestsEntity {
-  @PrimaryGeneratedColumn()
-  id: number;
+@Entity("contact_requests")
+export class ContactRequestsEntity{
+    @PrimaryGeneratedColumn()
+    id: number;
 
-  // Relação ManyToOne corrigida
-  @ManyToOne(() => UsersEntity, { nullable: false})
-  @JoinColumn({ name: "sender"})
-  sender: UsersEntity; // Tipo alterado para UsersEntity
+    @Column({name: "uuid", nullable: false, unique: true})
+    uuid: string;
 
-  // Relação ManyToOne corrigida
-  @ManyToOne(() => UsersEntity, { nullable: false })
-  @JoinColumn({ name: "receiver" })
-  receiver: UsersEntity; // Tipo alterado para UsersEntity
+    @ManyToOne(() => UsersEntity, (user: UsersEntity) => user.id, {nullable: false})
+    @JoinColumn({name: "sender_id"})
+    sender: UsersEntity;
 
-  @Column({ type: "enum", enum: ContactRequestStatus, default: ContactRequestStatus.pending })
-  status: ContactRequestStatus;
+    @ManyToOne(() => UsersEntity, (user: UsersEntity) => user.id, {nullable: false})
+    @JoinColumn({name: "receiver_id"})
+    receiver: UsersEntity;
 
-  @CreateDateColumn({ type: 'timestamp' })
-  created_at: Date;
+    @Column({name: "status", type: "enum", enum: ContactRequestsStatus, default: ContactRequestsStatus.pending, nullable: false})
+    status: ContactRequestsStatus;
 
-  @UpdateDateColumn({ type: 'timestamp' })
-  updated_at: Date;
+    @CreateDateColumn({name: "created_at"})
+    created_at: Date;
+
+    @UpdateDateColumn({name: "updated_at"})
+    updated_at: Date;
 }

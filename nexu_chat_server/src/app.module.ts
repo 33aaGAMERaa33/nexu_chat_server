@@ -2,17 +2,21 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AuthModule } from './auth/auth.module';
 import { UsersEntity } from './users/users.entity';
 import { UsersModule } from './users/users.module';
-import { JwtService } from '@nestjs/jwt';
-import { AuthModule } from './auth/auth.module';
-import { TokenModule } from './token/token.module';
+import { ConfigModule } from '@nestjs/config';
+import { ChatGateway } from './chat/chat.gateway';
 import { ContactRequestsEntity } from './contact_requests/contact_requests.entity';
 import { ContactRequestsModule } from './contact_requests/contact_requests.module';
-import { ContactsModule } from './contacts/contacts.module';
 import { ContactsEntity } from './contacts/contacts.entity';
-import { ViewContactsEntity } from './view_contacts/view_contacts.entity';
-import { ViewContactsModule } from './view_contacts/view_contacts.module';
+import { ContactsModule } from './contacts/contacts.module';
+import { ViewContactRequestsEntity } from './contact_requests/view-contact-requests.entity';
+import { ViewContactsEntity } from './contacts/view-contacts.entity';
+import { MessagesEntity } from './messages/messages.entity';
+import { MessagesModule } from './messages/messages.module';
+import { ViewMessagesEntity } from './messages/view-messages.entity';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -27,23 +31,28 @@ import { ViewContactsModule } from './view_contacts/view_contacts.module';
         UsersEntity,
         ContactRequestsEntity,
         ContactsEntity,
-        ViewContactsEntity
+        MessagesEntity,
+        ViewContactRequestsEntity,
+        ViewContactsEntity,
+        ViewMessagesEntity
       ],
       synchronize: true,
     }),
-    UsersModule,
+    ConfigModule.forRoot({
+      isGlobal: true
+    }),
     AuthModule,
-    TokenModule,
+    UsersModule,
     ContactRequestsModule,
     ContactsModule,
-    ViewContactsModule,
+    MessagesModule,
+    ChatModule,
   ],
   controllers: [
     AppController,
   ],
   providers: [
     AppService,
-    JwtService,
   ],
 })
 export class AppModule {}

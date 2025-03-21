@@ -1,7 +1,7 @@
 import { ContactRequestsEntity } from "src/contact_requests/contact_requests.entity";
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, JoinColumn, OneToOne, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 
-export enum ContactsStatus{
+export enum ContactStatus{
     active = "active",
     blocked = "blocked"
 }
@@ -11,16 +11,19 @@ export class ContactsEntity{
     @PrimaryGeneratedColumn()
     id: number;
 
-    @ManyToOne(() => ContactRequestsEntity, { nullable: false })
-    @JoinColumn({ name: "contact_request" }) // Nome da coluna no banco
-    contactRequest: ContactRequestsEntity;
+    @Column({name: "uuid", nullable: false, unique: true})
+    uuid: string;
 
-    @Column({type: "enum", enum: ContactsStatus, default: ContactsStatus.active})
-    status: ContactsStatus;
+    @OneToOne(() => ContactRequestsEntity, (contactRequest) => contactRequest.id)
+    @JoinColumn({name: "contact_request_id"})
+    contact_request: ContactRequestsEntity;
 
-    @CreateDateColumn({type: "timestamp", nullable: false})
+    @Column({name: "status", type: "enum", enum: ContactStatus, default: ContactStatus.active, nullable: false})
+    status: ContactStatus;
+
+    @CreateDateColumn({name: "created_at", type: "timestamp", nullable: false})
     created_at: Date;
 
-    @UpdateDateColumn({type: "timestamp", nullable: false})
+    @UpdateDateColumn({name: "updated_at", type: "timestamp", nullable: false})
     updated_at: Date;
 }

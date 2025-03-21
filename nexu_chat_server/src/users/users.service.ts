@@ -1,68 +1,81 @@
-
-import { HttpException, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { RegisterUserDTO } from './dto/register-user.dto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOneOptions, Repository } from 'typeorm';
 import { UsersEntity } from './users.entity';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
-import { ObterUsuariosDto } from './dto/obter-usuarios.dto';
+import { Repository } from 'typeorm';
+import { BuscarUsuarioDTO } from './dto/buscar-usuario.dto';
+import * as bcryptjs from "bcryptjs";
+import {v4 as uuidv4} from 'uuid';
+import { LoginUserDTO } from './dto/login-user.dto';
+import { ContactRequestsEntity } from 'src/contact_requests/contact_requests.entity';
+import { ObterUsersNaoRelacionadosDTO } from './dto/obter-users-nao-relacionados.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(UsersEntity)
-    public usersRepository: Repository<UsersEntity>,
-  ) {}
+    constructor(
+        @InjectRepository(UsersEntity)
+        private readonly usersRepository: Repository<UsersEntity>,
+        @InjectRepository(ContactRequestsEntity)
+        private readonly contactRequestsRepository: Repository<ContactRequestsEntity>
+    ) {}
+    async obterUsersNaoRelacionados(data: ObterUsersNaoRelacionadosDTO): Promise<UsersEntity[]>{
+        let limit = data.pagination.limit ?? 50;
+        let page = data.pagination.page ?? 1;
 
-  findAll(): Promise<UsersEntity[]> {
-    return this.usersRepository.find();
-  }
+        limit = limit > 50 ? 50 : limit;
+        page = page < 1 ? 1 : page;
 
-  // pega os usuarios que nao tem o contato registrado ao usuario
-  async obterUsersNaoRelacionadosAoUser(data: ObterUsuariosDto, userId: number, limit: number = 50) {
-    const uuid = data.uuid ?? "";
-    const username = data.username ?? "";
-    const email = data.email ?? "";
-    const page = data.page ?? 1;
+        let subQuery = `
+        select cr.sender_id from contact_requests as cr
+        where cr.sender_id = :userID or cr.receiver_id = :userID
+        union all
+        select cr.receiver_id from contact_requests as cr
+        where cr.sender_id = :userID or cr.receiver_id = :userID
+        `;
 
-    let escapedEmail = email.replace(/[%_]/g, "\\$&");
-
-    const subQuery = `
-        SELECT cr.sender FROM contact_requests cr WHERE cr.receiver = :userId
-        UNION ALL
-        SELECT cr.receiver FROM contact_requests cr WHERE cr.sender = :userId
-    `;
-
-    const usuarios = await this.usersRepository
+        let users = await this.usersRepository
         .createQueryBuilder("user")
-        .where("user.id != :userId", { userId })
-        .andWhere("user.email LIKE :email", { email: `%${escapedEmail}%` })
-        .andWhere(`user.id NOT IN (${subQuery})`, { userId })  // Aqui está a correção
-        .orderBy("user.email", "ASC")
-        .skip((page - 1) * limit)
+        .where("user.id != :userID", {userID: data.userID})
+        .andWhere(`user.id not in (${subQuery})`, {userID: data.userID})
+        .select([
+            "user.uuid as uuid",
+            "user.username as username",
+            "user.email as email"
+        ])
         .take(limit)
-        .getMany();
-        
-    return { usuarios, page };
-}
+        .skip((page - 1) * limit)
+        .getRawMany();
 
-  
-  async findOne(data: FindOneOptions<UsersEntity>): Promise<UsersEntity | null> {
-    return await this.usersRepository.findOne(data);
-  }
+        return users;  
+    }
+    async validarLogin(data: LoginUserDTO) : Promise<UsersEntity>{
+        let user = await this.buscarUsuario({email: data.email});
 
-  async create(createUserDto: CreateUserDto): Promise<UsersEntity> {
-    const userEntity = this.usersRepository.create({
-      username: createUserDto.username,
-      email: createUserDto.email,
-      password: createUserDto.password,
-    });
-  
-    return await this.usersRepository.save(userEntity); // Agora a entidade é salva no BD
-  }
-  async update(id: number, data: UpdateUserDto): Promise<boolean> {
-    const result = await this.usersRepository.update(id, data);
+        if(user == null || !(await bcryptjs.compare(data.password, user.password))){
+            throw new Error("Email ou senha invalidos");
+        } 
 
-    return result.affected === 1;
-  }
+        return user;
+    }
+    async registrarUsuario(data: RegisterUserDTO) : Promise<UsersEntity>{
+        let user = await this.buscarUsuario({email: data.email});
+        console.log(data.email);
+
+        if(user != null){
+            throw new Error("Email já em uso");
+        }
+
+        let passwordHashed = await bcryptjs.hash(data.password, 10); 
+
+        user = this.usersRepository.create({
+            ...data,
+            password: passwordHashed,
+            uuid: uuidv4()
+        });
+
+        return await this.usersRepository.save(user);
+    }
+    async buscarUsuario(user: BuscarUsuarioDTO){
+        return this.usersRepository.findOne({where: user});
+    }
 }

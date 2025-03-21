@@ -1,117 +1,117 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { ContactRequestsEntity, ContactRequestsStatus } from './contact_requests.entity';
 import { DataSource, Repository } from 'typeorm';
-import { ContactRequestsEntity, ContactRequestStatus } from './contact_requests.entity';
-import { UsersService } from 'src/users/users.service';
-import { ContactsEntity } from 'src/contacts/contacts.entity';
-import { ContactsService } from 'src/contacts/contacts.service';
+import { EnviarPedidoContatoDTO } from './dto/enviar-pedido-contato.dto';
 import { UsersEntity } from 'src/users/users.entity';
-import { ChatGateway } from 'src/chat/chat.gateway';
+import { ObterPedidosContatoDTO } from './dto/obter-pedidos-contato.dto';
+import {v4 as uuidv4} from 'uuid';
+import { ProcessarPedidoContatoDTO } from './dto/processar-pedido-contato.dto';
+import { ContactsEntity } from 'src/contacts/contacts.entity';
 
 @Injectable()
 export class ContactRequestsService {
-  constructor(
-    @InjectRepository(ContactRequestsEntity)
-    private contactRequestsRepository: Repository<ContactRequestsEntity>,
-    @InjectRepository(UsersEntity)
-    private usersRepository: Repository<UsersEntity>,
-    @InjectDataSource()
-    private readonly dataSource: DataSource,
+    constructor(
+        @InjectRepository(ContactRequestsEntity)
+        private readonly contactRequestsRepository: Repository<ContactRequestsEntity>,
+        @InjectRepository(UsersEntity)
+        private readonly usersRepository: Repository<UsersEntity>,
+        @InjectRepository(ContactsEntity)
+        private readonly contactsRepository: Repository<ContactsEntity>,
+        @InjectDataSource()
+        private readonly dataSource: DataSource
+    ) {}
+    async processarPedidoContato(data: ProcessarPedidoContatoDTO){
+        return this.dataSource.transaction(async (manager) => {
+            let contactRequest = await manager.findOneBy(ContactRequestsEntity, {uuid: data.pedido_uuid});  
+        
+            if(!contactRequest){
+                throw Error("Pedido de contato não encontrado");
+            }else if(contactRequest.status == ContactRequestsStatus.accepted){
+                throw Error("Não é possivel processar esse pedido");
+            }else if(data.status == ContactRequestsStatus.pending){
+                throw Error("Não é possivel alterar o status do pedido para o requerido");
+            }
+    
+            let update = await manager.update(ContactRequestsEntity, contactRequest.id, {status: data.status});
 
-    private readonly usersService: UsersService,
-    private readonly contactsService: ContactsService,
-  ) {}
-  async enviarPedidoContato(remetente_id: number, destinatario_id: number){
-    const rementente = await this.usersService.findOne({
-      where: {id: remetente_id}
-    });
-    const destinatario = await this.usersService.findOne({
-      where: {id: destinatario_id}
-    });
+            if(update.affected !== 1){
+                throw Error("Não foi possivel processar esse pedido");
+            }
 
-    if(rementente == null || destinatario == null){
-      const notFound: string = rementente == null ? "Rementente" : "Destinatario";
+            let contact = manager.create(ContactsEntity, {
+                uuid: uuidv4(),
+                contact_request: contactRequest
+            });
 
-      throw new HttpException(`${notFound ?? "Not Found"} não encontrado`, HttpStatus.NOT_FOUND);
-    }else if(await this.pegarPedidoContatoEntreUsuarios(remetente_id, destinatario_id) != null){
-      throw new HttpException(`Pedido de contato já existente`, HttpStatus.NOT_IMPLEMENTED);
+            return await manager.save(ContactsEntity, contact);
+        });
     }
+    async enviarPedidoContato(data: EnviarPedidoContatoDTO){
+        let sender = await this.usersRepository.findOne({
+            where: {
+                id: data.userID
+            }
+        });
+        let receiver = await this.usersRepository.findOne({
+            where: {
+                uuid: data.receiver_uuid
+            }
+        });
 
-    const contactRequest = this.contactRequestsRepository.create({
-      sender: rementente,
-      receiver: destinatario,
-    });
+        if(!sender || !receiver){
+            throw Error("Usuario não encontrado");
+        }else if(await this.pegarPedidoEntreUsuarios(sender.id, receiver.id)){
+            throw Error("Pedido de contato já existe");
+        }else if(sender.id == receiver.id){ 
+            throw Error("Não é possivel enviar um pedido para si mesmo");
+        }
 
-    let destinatarioSocket = ChatGateway.getSocketByUserId(destinatario_id);
+        let contactRequest = this.contactRequestsRepository.create({
+            sender: sender,
+            receiver: receiver,
+            uuid: uuidv4()
+        });
 
-    if(destinatarioSocket != null){
-      destinatarioSocket.emit("novo-pedido-contato", {
-        id: rementente.id,
-      });
+        return await this.contactRequestsRepository.save(contactRequest);
     }
+    async obterPedidosContato(data: ObterPedidosContatoDTO){
+        let limit = data.pagination.limit ?? 50;
+        let page = data.pagination.page ?? 1;
 
-    return await this.contactRequestsRepository.save(contactRequest);
-  }
-  async processContactRequest(idRequest: number, status: ContactRequestStatus): Promise<void> {
-    return await this.dataSource.transaction(async (manager) => {
-      let contactRequest = await manager.findOne(ContactRequestsEntity, {
-        where: {
-          id: idRequest
-        },
-        relations: [
-          "sender",
-          "receiver"
-        ]
-      });
+        limit = limit > 50 ? 50 : limit;
+        page = page < 1 ? 1 : page;
 
-      if(contactRequest == null){
-        throw new Error("Pedido de contato não encontrado");
-      }else if(contactRequest.status == ContactRequestStatus.accepted){
-        throw new Error("Não é mais possivel alterar o status deste pedido");
-      }
+        let pedidosContato = await this.contactRequestsRepository
+        .createQueryBuilder("cr")
+        .where("cr.receiver_id = :userID")
+        .andWhere("cr.status = :status")
+        .innerJoin(UsersEntity, "sender", "sender.id = cr.sender_id")
+        .select([
+            "sender.uuid as uuid",
+            "sender.username as username",
+            "sender.email as email",
+            "cr.uuid as request_uuid",
+            "cr.status as status",
 
-      let update = await manager.update(ContactRequestsEntity, contactRequest.id, {status: status});
+        ])
+        .take(limit)
+        .skip((page - 1) * limit)
+        .setParameter("userID", data.userID)
+        .setParameter("status", data.request_status)
+        .getRawMany();
 
-      await this.contactsService.criarContato(contactRequest.id);
-    });
-  }
-  async pegarPedidosContatoUsuario(userId: string, status: ContactRequestStatus) {
+        return pedidosContato;
+    }
+    async pegarPedidoEntreUsuarios(user1ID: number, user2ID: number): Promise<any | undefined>{
+        let contactRequest = await this.contactRequestsRepository
+        .createQueryBuilder("cr")
+        .where("(cr.sender_id = :user1ID and cr.receiver_id = :user2ID)")
+        .orWhere("(cr.sender_id = :user2ID and cr.receiver_id = :user1ID)")
+        .setParameter("user1ID", user1ID)
+        .setParameter("user2ID", user2ID)
+        .getRawOne();
 
-    const pedidosContato = await this.contactRequestsRepository
-      .createQueryBuilder("cr")
-      .leftJoinAndSelect("cr.sender", "sender") // Carrega o remetente
-      .where("cr.receiver = :userId", { userId }) // Filtra pelo destinatário
-      .andWhere("cr.status = :status", { status }) // Filtra pelo status
-      .select([
-        "cr.id as request_id",
-        "sender.id as id",
-        "sender.username as username",
-        "sender.email as email",
-        "sender.created_at as created_at"
-      ])
-      .getRawMany(); // Retorna os dados brutos
-  
-    return pedidosContato;
-  }
-  
-  async pegarPedidoContatoPorId(requestId: number){
-    return await this.contactRequestsRepository.findOne({
-      where: {
-        id: requestId
-      },
-      relations: [
-        "sender",
-        "receiver"
-      ]
-    });
-  }
-  async pegarPedidoContatoEntreUsuarios(user1_id: number, user2_id: number){
-    const contactRequest = await this.contactRequestsRepository
-    .createQueryBuilder("request")
-    .where("(request.sender = :id1 or request.receiver = :id1)", {id1: user1_id})
-    .andWhere("(request.sender = :id2 or request.receiver = :id2)", {id2: user2_id})
-    .getOne();
-
-    return contactRequest;
-  }
+        return contactRequest;
+    }
 }

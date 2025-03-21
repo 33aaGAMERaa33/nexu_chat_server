@@ -1,25 +1,42 @@
 import { ContactsEntity } from "src/contacts/contacts.entity";
 import { UsersEntity } from "src/users/users.entity";
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { BeforeInsert, Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 
-@Entity("messages")
+export enum MessagesType{
+    text = "text",
+    video = "video",
+    audio = "audio",
+}
+
+@Entity({name: "messages"})
 export class MessagesEntity{
     @PrimaryGeneratedColumn()
     id: number;
 
-    @ManyToOne(() => ContactsEntity, (contact) => contact.id)
-    @JoinColumn({name: "contact"})
-    contact: ContactsEntity
+    @Column({name: "uuid", nullable: false, unique: true})
+    uuid: string;
 
-    @ManyToOne(() => UsersEntity, (user) => user.id)
+    @ManyToOne(() => ContactsEntity, (contact) => contact.id, {nullable: false})
+    @JoinColumn({name: "contact_id"})
+    contact: ContactsEntity;
+
+    @ManyToOne(() => UsersEntity, (user) => user.id, {nullable: false})
+    @JoinColumn({name: "sender_id"})
     sender: UsersEntity;
-
-    @ManyToOne(() => UsersEntity, (user) => user.id)
+    
+    @ManyToOne(() => UsersEntity, (user) => user.id, {nullable: false})
+    @JoinColumn({name: "receiver_id"})
     receiver: UsersEntity;
 
     @Column({name: "message", nullable: false})
     message: string;
 
-    @Column({name: "sent_at", nullable: false, type: "timestamp"})
+    @Column({name: "media_type", type: "enum", enum: MessagesType, nullable: false})
+    media_type: MessagesType;
+
+    @Column({name: "media_url", nullable: true})
+    media_url: string;
+
+    @CreateDateColumn({name: "sent_at", type: "timestamp"})
     sent_at: Date;
 }

@@ -1,32 +1,26 @@
 import { Module } from '@nestjs/common';
+import { ContactsController } from './contacts.controller';
 import { ContactsService } from './contacts.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ContactsEntity } from './contacts.entity';
-import { ContactsController } from './contacts.controller';
 import { UsersEntity } from 'src/users/users.entity';
-import { TokenService } from 'src/token/token.service';
-import { UsersService } from 'src/users/users.service';
+import { ContactsEntity } from './contacts.entity';
+import { ContactRequestsEntity } from 'src/contact_requests/contact_requests.entity';
 import { AuthModule } from 'src/auth/auth.module';
-import { ViewContactsEntity } from 'src/view_contacts/view_contacts.entity';
-import { ViewContactsService } from 'src/view_contacts/view_contacts.service';
+import { ViewContactRequestsEntity } from 'src/contact_requests/view-contact-requests.entity';
+import { ViewContactsEntity } from './view-contacts.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([
+      UsersEntity,
+      ContactRequestsEntity,
       ContactsEntity,
-      ViewContactsEntity,
-      UsersEntity
+      ViewContactRequestsEntity,
+      ViewContactsEntity
     ]),
     AuthModule
   ],
-  providers: [
-    ContactsService,
-    TokenService,
-    UsersService,
-    ViewContactsService
-  ],
-  controllers: [
-    ContactsController
-  ],
+  controllers: [ContactsController],
+  providers: [ContactsService]
 })
 export class ContactsModule {}

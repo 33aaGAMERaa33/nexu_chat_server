@@ -1,54 +1,71 @@
 import {
-  WebSocketGateway,
-  OnGatewayConnection,
-  OnGatewayDisconnect,
-  WebSocketServer
+    WebSocketGateway,
+    OnGatewayConnection,
+    OnGatewayDisconnect,
+    WebSocketServer
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { TokenService } from 'src/token/token.service';
+import { AuthService } from 'src/auth/auth.service';
+
+export enum MessageServerSocket {
+    connectionStatus = "connection-status",
+    newMessageReceived = "new-message-received"
+}
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  @WebSocketServer()
-  server: Server;
+    @WebSocketServer()
+    server: Server;
 
-  private static users = new Map<number, Socket>();
+    // ✅ Agora `users` é um dicionário onde a chave é o UUID do usuário
+    static users: Record<string, Socket> = {};
 
-  constructor(
-    private readonly tokenService: TokenService
-  ) {}
+    constructor(
+        private readonly authService: AuthService,
+    ) {}
 
-  async  handleConnection(client: Socket) {
-    const token = client.handshake.query["token"];
-    const tokenValido = await this.tokenService.validateTokenSession(token as string);
+    async handleConnection(client: Socket) {
+        const token = client.handshake.headers.authorization?.split("Bearer ")[1];
+        const tokenValido = await this.authService.decodeToken(token as string);
 
-    if (tokenValido) {
-      console.log(`Cliente connectado: ${client.id} (UserID: ${tokenValido.id})`);
-      ChatGateway.users.set(tokenValido.id, client);
-    } else {
-      client.disconnect();
+        if (tokenValido) {
+            client.data = tokenValido;
+            ChatGateway.users[tokenValido.uuid] = client; // ✅ Armazena corretamente o usuário
+
+            ChatGateway.enviarMensagemParaSocket(MessageServerSocket.connectionStatus, client, {
+                "status": "success",
+                "message": "Conexão aceita",
+            });
+
+            console.log("Cliente conectado: " + tokenValido.uuid);
+        } else {
+            ChatGateway.enviarMensagemParaSocket(MessageServerSocket.connectionStatus, client, {
+                "status": "error",
+                "message": "Token inválido",
+            });
+
+            client.disconnect();
+        }
     }
-  }
-  
-  async handleDisconnect(client: Socket) {
-    const userId = ChatGateway.getUserIdBySocket(client);
 
-    if (userId) {
-      ChatGateway.users.delete(userId);
-      console.log(`Cliente desconectado: ${client.id} (UserID: ${userId})`);
+    async handleDisconnect(client: Socket) {
+        // ✅ Remove o usuário quando ele se desconectar
+        const userUUID = client.data?.uuid;
+        if (userUUID && ChatGateway.users[userUUID]) {
+            delete ChatGateway.users[userUUID]; 
+            console.log("Cliente desconectado: " + userUUID);
+        }
     }
-  }
-  public static getSocketByUserId(userId: number) : Socket | undefined{
-    let socket = this.users.get(userId);
 
-    return socket;
-  }
-  public static getUserIdBySocket(client: Socket): number | undefined {
-    for (const [userId, socket] of ChatGateway.users.entries()) {
-      if (socket.id === client.id) {
-        return userId;
-      }
+    static enviarMensagemParaUsuario(type: MessageServerSocket, userUUID: string, message: any) {
+        let userSocket = ChatGateway.users[userUUID];
+
+        if (userSocket) {
+            userSocket.emit(type, message);
+        }
     }
-    return undefined;
-  }
+
+    static enviarMensagemParaSocket(type: MessageServerSocket, socket: Socket, message: any) {
+        socket.emit(type, message);
+    }
 }

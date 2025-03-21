@@ -1,84 +1,76 @@
-import { Body, Controller, Headers, HttpException, HttpStatus, Post } from '@nestjs/common';
+import { Body, Controller, HttpException, HttpStatus, Post, Request, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { EnviarPedidoContatoDTO as EnviarPedidoContatoDTO } from './dto/enviar-pedido-contato.dto';
 import { ContactRequestsService } from './contact_requests.service';
-import { TokenService } from 'src/token/token.service';
-import { ChatGateway } from 'src/chat/chat.gateway';
-import { UsersService } from 'src/users/users.service';
-import { ContactRequestStatus } from './contact_requests.entity';
+import { AuthService } from 'src/auth/auth.service';
+import { ObterPedidosContatoDTO } from './dto/obter-pedidos-contato.dto';
+import { ProcessarPedidoContatoDTO } from './dto/processar-pedido-contato.dto';
 
 @Controller('contact-requests')
 export class ContactRequestsController {
     constructor(
-        private readonly contactRequestsService: ContactRequestsService,    
-        private readonly tokenService: TokenService,    
+        private readonly contactRequestsService: ContactRequestsService,
+        private readonly authService: AuthService,
     ) {}
-    @Post("enviar-pedido-contato")
-    async enviarPedidoContato(@Body() body, @Headers("authorization") authHeader: string){
-        const id = body.id;
-        const token = this.tokenService.extractToken(authHeader);
-        const tokenValido = await this.tokenService.validateTokenSession(token ?? "");
+    @Post("processar-pedido-contato")
+    @UseGuards(AuthGuard("jwt"))
+    async processarPedidoContato(@Body() data: ProcessarPedidoContatoDTO, @Request() req){ 
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const tokenValido = await this.authService.decodeToken(token);
 
-        if(tokenValido instanceof HttpException){
-            throw tokenValido;
+        try{
+            await this.contactRequestsService.processarPedidoContato({
+                ...data,
+                userID: tokenValido.id
+            });
+
+            return {
+                "status": "success",
+                "message": "Pedido contato processado"
+            };
+        }catch(e){
+            throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
         }
-
-        let contactRequest = await this.contactRequestsService.enviarPedidoContato(tokenValido.id, body.id);
-
+    }
+    @Post("enviar-pedido-contato")
+    @UseGuards(AuthGuard("jwt"))
+    async enviarPedidoContato(@Body() data: EnviarPedidoContatoDTO, @Request() req) {
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const tokenValido = await this.authService.decodeToken(token);
+        
+        try{
+            await this.contactRequestsService.enviarPedidoContato({
+                ...data,
+                userID: tokenValido.id
+            });
+        }catch(e){
+            throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
+        }
+        
         return {
             "status": "success",
-            "message": "Pedido de contato enviado",
+            "message": "Pedido enviado",
         };
     }
-    @Post("process_contact_request")
-    async processarPedidoContato(@Body() body, @Headers("authorization") authHeader: string){
-        const token = this.tokenService.extractToken(authHeader);
-        const tokenValido = await this.tokenService.validateTokenSession(token ?? "", true);
+    @Post("obter-pedidos-contato")
+    @UseGuards(AuthGuard("jwt"))
+    async obterPedidosContato(@Body() data: ObterPedidosContatoDTO, @Request() req){
+        const token = req.headers.authorization?.replace('Bearer ', '');
+        const tokenValido = await this.authService.decodeToken(token);
+        
+        try{
+            let pedidosContato = await this.contactRequestsService.obterPedidosContato({
+                ...data,
+                userID: tokenValido.id
+            });
 
-        if(tokenValido instanceof HttpException){
-            throw tokenValido;
-        }
-
-        if(body.id != null && body.status != null && body.status != ContactRequestStatus.pending){
-            let pedidoContato = await this.contactRequestsService.pegarPedidoContatoPorId(body.id);
-
-            if(pedidoContato != null && (pedidoContato.sender.id == tokenValido.id || pedidoContato.receiver.id == tokenValido.id)){
-
-                try{
-                    let pedidoProcessado = await this.contactRequestsService.processContactRequest(body.id, body.status);
-                }catch(e){
-                    throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
-                }
-                
-
-                return {
-                    "status": "success",
-                    "message": "Pedido de contato processado"
-                };
-            }
-
-            throw new HttpException("Pedido de contato não encontrado", HttpStatus.NOT_FOUND);
-        }else{
-            throw new HttpException("Argumento invalido", HttpStatus.BAD_REQUEST);
-        }
-    }
-
-    @Post("obter-pedidos-contato-por-dados")
-    async obterPedidosContatoPorDados(@Body() body, @Headers("authorization") authHeader: string){
-        const token = this.tokenService.extractToken(authHeader);
-        const tokenValido = await this.tokenService.validateTokenSession(token ?? "");
-
-        if(tokenValido instanceof HttpException){
-            throw tokenValido;
-        }
-
-        let idUser = tokenValido.id;
-        let status = body.status;
-
-        let pedidos = await this.contactRequestsService.pegarPedidosContatoUsuario(idUser, ContactRequestStatus.pending);
-
-        return {
-            "status": "success",
-            "message": "Retornando pedindos de contato",
-            "requests": pedidos
+            return {
+                "status": "success",
+                "message": "Retorno de pedidos",
+                "pedidos": pedidosContato
+            };
+        }catch(e){
+            throw new HttpException(e.message, HttpStatus.BAD_REQUEST);
         }
     }
 }

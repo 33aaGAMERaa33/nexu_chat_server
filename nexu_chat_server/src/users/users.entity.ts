@@ -1,35 +1,25 @@
-import { ContactRequestsEntity } from 'src/contact_requests/contact_requests.entity';
-import { ContactsEntity } from 'src/contacts/contacts.entity';
-import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Unique, ManyToOne, OneToMany } from 'typeorm';
+import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
 
-@Entity('users')
-export class UsersEntity {
-  @PrimaryGeneratedColumn()
-  id: number;
+@Entity("users")
+export class UsersEntity{
+    @PrimaryGeneratedColumn()
+    id: number;
 
-  @Column({nullable: false})
-  username: string;
-  
-  @Unique(["email"])
-  @Column({ nullable: false })
-  email: string;
-  
-  @Column({nullable: false})
-  password: string;
+    @Column({name: "uuid", nullable: false, unique: true})
+    uuid: string;
 
-  @CreateDateColumn({type: 'timestamp'})
-  created_at: Date;
+    @Column({name: "username", nullable: false,})
+    username: string;
 
-  @UpdateDateColumn({type: 'timestamp'})
-  updated_at: Date;
+    @Column({name: "email", nullable: false, unique: true})
+    email: string;
 
-  @OneToMany(() => ContactRequestsEntity, (contactRequest) => contactRequest.sender)
-  sentRequests: ContactRequestsEntity[];
+    @Column({name: "password", nullable: false,})
+    password: string
 
-  @OneToMany(() => ContactRequestsEntity, (contactRequest) => contactRequest.receiver)
-  receivedRequests: ContactRequestsEntity[];
+    @CreateDateColumn({name: "created_at", type: "timestamp"})
+    created_at: Date;
 
-
-  @Column({type: "varchar", length: 500})
-  token: string;
+    @UpdateDateColumn({name: "updated_at", type: "timestamp"})
+    updated_at: Date;
 }

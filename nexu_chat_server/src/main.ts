@@ -1,18 +1,23 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import * as session from 'express-session';
+import { ValidationPipe } from '@nestjs/common';
+import { WebSocketAdapter } from './chat/web-socket.adapter';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true, 
+    transform: true, 
+  }));
 
-  app.use(
-    session({
-      secret: 'seilaPorra',
-      resave: false,
-      saveUninitialized: false,
-    }),
-  );
+  const configService = app.get(ConfigService);
 
-  await app.listen(process.env.PORT ?? 3000);
+  app.useWebSocketAdapter(new WebSocketAdapter(configService));
+
+  await app.listen(Number(process.env.SERVER_PORT));
 }
+
 bootstrap();
